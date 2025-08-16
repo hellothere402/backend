@@ -20,7 +20,7 @@ app = Flask(__name__)
 # Configure CORS to allow your frontend domains
 ALLOWED_ORIGINS = [
     'http://localhost:3000',
-    '',  # Replace with your actual Vercel URL
+    'https://ncea-ai-three.vercel.app',  # Replace with your actual Vercel URL
     'https://your-custom-domain.com'  # Replace with your custom domain if you have one
 ]
 

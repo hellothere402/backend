@@ -1,3 +1,4 @@
+import json
 import time
 import psutil
 import logging
@@ -90,21 +91,21 @@ class SystemManager:
             self._handle_high_errors()
 
     def _handle_high_cpu(self):
-     """Handle high CPU usage"""
-     self.logger.warning("Implementing CPU throttling measures")
-    # Add actual CPU management logic here if needed
+        """Handle high CPU usage"""
+        self.logger.warning("Implementing CPU throttling measures")
+        # Add actual CPU management logic here if needed
 
     def _handle_high_memory(self):
-     """Handle high memory usage"""
-     self.logger.warning("Implementing memory cleanup measures")
-    # Add actual memory cleanup logic here if needed
-     import gc
-     gc.collect()  # Force garbage collection
+        """Handle high memory usage"""
+        self.logger.warning("Implementing memory cleanup measures")
+        # Add actual memory cleanup logic here if needed
+        import gc
+        gc.collect()  # Force garbage collection
 
     def _handle_high_errors(self):
-     """Handle high error rate"""
-     self.logger.error("High error rate detected - investigating")
-    # Add error handling logic here if needed
+        """Handle high error rate"""
+        self.logger.error("High error rate detected - investigating")
+        # Add error handling logic here if needed
 
     def cleanup(self):
         """Cleanup system resources"""
@@ -192,6 +193,14 @@ class VoiceProfileManager:
         except Exception as e:
             logging.error(f"Error adding profile: {e}")
             return False
+
+    def _serialize_embeddings(self, embeddings: List[np.ndarray]) -> bytes:
+        """Serialize embeddings for storage"""
+        return json.dumps([emb.tolist() for emb in embeddings]).encode()
+
+    def _deserialize_embeddings(self, data: bytes) -> List[np.ndarray]:
+        """Deserialize embeddings from storage"""
+        return [np.array(emb) for emb in json.loads(data.decode())]
 
     def cleanup(self):
         """Cleanup voice profile manager"""
@@ -330,5 +339,6 @@ class PerformanceMonitor:
         """Log response time"""
         self.metrics_queue.put(duration)
 
-
-
+    def cleanup(self):
+        """Cleanup performance monitor"""
+        pass
