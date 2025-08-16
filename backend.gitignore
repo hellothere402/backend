@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Config files with secrets
+config.yaml
+.env
+
+# Cache and temp files
+*.log
+response_cache.json
+voice_profiles.json
+*.wav
+*.mp3
+temp_audio_*
+
+# Database
+*.db
+*.sqlite
+system.db
+
+# Model cache
+models_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
