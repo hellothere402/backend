@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.spatial.distance import cosine
 import openai
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
