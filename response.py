@@ -166,6 +166,7 @@ class LocalProcessor:
 
 class CloudProcessor:
     def __init__(self, api_key: str):
+        # Initialize OpenAI client WITHOUT proxies
         self.client = openai.OpenAI(api_key=api_key)
         self.conversation_history = {}
 
@@ -214,6 +215,7 @@ class CloudProcessor:
 
 class TTSEngine:
     def __init__(self, api_key: str, voice_id: str = "nova"):
+        # Initialize OpenAI client WITHOUT proxies
         self.client = openai.OpenAI(api_key=api_key)
         self.voice_id = voice_id
     
