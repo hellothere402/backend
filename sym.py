@@ -1,4 +1,3 @@
-import json
 import time
 import psutil
 import logging
@@ -90,6 +89,23 @@ class SystemManager:
             self.logger.error("High error rate detected")
             self._handle_high_errors()
 
+    def _handle_high_cpu(self):
+     """Handle high CPU usage"""
+     self.logger.warning("Implementing CPU throttling measures")
+    # Add actual CPU management logic here if needed
+
+    def _handle_high_memory(self):
+     """Handle high memory usage"""
+     self.logger.warning("Implementing memory cleanup measures")
+    # Add actual memory cleanup logic here if needed
+     import gc
+     gc.collect()  # Force garbage collection
+
+    def _handle_high_errors(self):
+     """Handle high error rate"""
+     self.logger.error("High error rate detected - investigating")
+    # Add error handling logic here if needed
+
     def cleanup(self):
         """Cleanup system resources"""
         self.voice_manager.cleanup()
@@ -99,17 +115,35 @@ class SystemManager:
 class VoiceProfileManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
-        self._init_db()
-        
-        
+        self._init_db()  # Initialize database structure
         self.active_profiles: Dict[str, VoiceProfileData] = {}
         self._load_active_profiles()  
-    
+
+    def _get_connection(self):
+        """Get a thread-safe database connection"""
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self):
+        """Initialize database tables"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS voice_profiles (
+                user_id TEXT PRIMARY KEY,
+                name TEXT,
+                embeddings BLOB,
+                last_updated TIMESTAMP,
+                active BOOLEAN
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
     def _load_active_profiles(self):
         """Load active profiles from database"""
         try:
-            cursor = self.conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
             cursor.execute('''
                 SELECT user_id, name, embeddings, last_updated 
                 FROM voice_profiles 
@@ -125,28 +159,17 @@ class VoiceProfileManager:
                     active=True
                 )
                 self.active_profiles[profile.user_id] = profile
+            
+            conn.close()
                 
         except Exception as e:
             logging.error(f"Error loading active profiles: {e}")
 
-    def _init_db(self):
-        """Initialize database tables"""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS voice_profiles (
-                user_id TEXT PRIMARY KEY,
-                name TEXT,
-                embeddings BLOB,
-                last_updated TIMESTAMP,
-                active BOOLEAN
-            )
-        ''')
-        self.conn.commit()
-
     def add_profile(self, profile: VoiceProfileData) -> bool:
         """Add or update voice profile"""
         try:
-            cursor = self.conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO voice_profiles 
                 (user_id, name, embeddings, last_updated, active)
@@ -158,7 +181,8 @@ class VoiceProfileManager:
                 profile.last_updated,
                 profile.active
             ))
-            self.conn.commit()
+            conn.commit()
+            conn.close()
             
             if profile.active:
                 self.active_profiles[profile.user_id] = profile
@@ -169,25 +193,26 @@ class VoiceProfileManager:
             logging.error(f"Error adding profile: {e}")
             return False
 
-    def _serialize_embeddings(self, embeddings: List[np.ndarray]) -> bytes:
-        """Serialize embeddings for storage"""
-        return json.dumps([emb.tolist() for emb in embeddings]).encode()
-
-    def _deserialize_embeddings(self, data: bytes) -> List[np.ndarray]:
-        """Deserialize embeddings from storage"""
-        return [np.array(emb) for emb in json.loads(data.decode())]
+    def cleanup(self):
+        """Cleanup voice profile manager"""
+        # No persistent connection to close
+        pass
 
 
 class ResponseCacheManager:
     def __init__(self, db_path: str, max_age_days: int = 30):
         self.db_path = db_path
         self.max_age_days = max_age_days
-        self.conn = sqlite3.connect(db_path)
         self._init_db()
+
+    def _get_connection(self):
+        """Get a thread-safe database connection"""
+        return sqlite3.connect(self.db_path)
 
     def _init_db(self):
         """Initialize cache database"""
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS response_cache (
                 cache_key TEXT PRIMARY KEY,
@@ -198,11 +223,13 @@ class ResponseCacheManager:
                 use_count INTEGER
             )
         ''')
-        self.conn.commit()
+        conn.commit()
+        conn.close()
 
     def get_response(self, cache_key: str) -> Optional[Dict]:
         """Get cached response"""
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute('''
             SELECT response_text, response_audio, use_count 
             FROM response_cache 
@@ -212,33 +239,52 @@ class ResponseCacheManager:
         result = cursor.fetchone()
         if result:
             # Update usage statistics
-            self._update_usage(cache_key)
-            return {
+            self._update_usage(cache_key, conn)
+            response_data = {
                 'text': result[0],
                 'audio': result[1],
                 'use_count': result[2]
             }
+            conn.close()
+            return response_data
+        
+        conn.close()
         return None
 
-    def _update_usage(self, cache_key: str):
+    def _update_usage(self, cache_key: str, conn=None):
         """Update cache entry usage statistics"""
-        cursor = self.conn.cursor()
+        if conn is None:
+            conn = self._get_connection()
+            should_close = True
+        else:
+            should_close = False
+            
+        cursor = conn.cursor()
         cursor.execute('''
             UPDATE response_cache 
             SET last_used = ?, use_count = use_count + 1
             WHERE cache_key = ?
         ''', (datetime.now(), cache_key))
-        self.conn.commit()
+        conn.commit()
+        
+        if should_close:
+            conn.close()
 
     def clean_old_entries(self):
         """Remove old cache entries"""
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute('''
             DELETE FROM response_cache 
             WHERE julianday('now') - julianday(last_used) > ?
         ''', (self.max_age_days,))
-        self.conn.commit()
+        conn.commit()
+        conn.close()
 
+    def cleanup(self):
+        """Cleanup cache manager"""
+        # No persistent connection to close
+        pass
 
 class PerformanceMonitor:
     def __init__(self):
@@ -283,5 +329,6 @@ class PerformanceMonitor:
     def log_response_time(self, duration: float):
         """Log response time"""
         self.metrics_queue.put(duration)
+
 
 
