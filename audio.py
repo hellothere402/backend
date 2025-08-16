@@ -1,149 +1,85 @@
-import pyaudio
+# audio_cloud.py - Cloud-compatible version without PyAudio
 import numpy as np
-import wave
 from collections import deque
-import webrtcvad
 from queue import Queue
 from typing import Optional
-import queue
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AudioInputSystem:
+    """Cloud-compatible audio system - processes audio files only, no real-time capture"""
+    
     def __init__(self):
         # Audio parameters
-        self.FORMAT = pyaudio.paFloat32
         self.CHANNELS = 1
-        self.RATE = 16000  # Required for WebRTC VAD
-        self.CHUNK_DURATION_MS = 30  # Duration of each chunk in milliseconds
-        self.CHUNK = int(self.RATE * self.CHUNK_DURATION_MS / 1000)  # Samples per chunk
+        self.RATE = 16000
+        self.CHUNK_DURATION_MS = 30
+        self.CHUNK = int(self.RATE * self.CHUNK_DURATION_MS / 1000)
         
-        # Initialize PyAudio
-        self.audio = pyaudio.PyAudio()
-        
-        # Initialize VAD (Voice Activity Detection)
-        self.vad = webrtcvad.Vad(3)  # Aggressiveness level 3 (0-3)
-        
-        # Buffer setup (3 seconds of audio)
+        # Buffer setup
         self.buffer_duration_seconds = 3
         self.buffer_size = int(self.RATE * self.buffer_duration_seconds)
         self.audio_buffer = deque(maxlen=self.buffer_size)
         
-        # Queue for processing detected voice segments
+        # Queue for processing
         self.voice_segments_queue = Queue()
         
         # Control flags
         self.is_running = False
-        self.stream: Optional[pyaudio.Stream] = None
-
         self.is_paused = False
-
-    def start_audio_stream(self):
-      """Start the audio input stream"""
-      if self.is_running:
-         return
-
-      self.is_running = True
-      self.audio_buffer.clear()  # Clear any old data
-    
-      # Open audio stream
-      self.stream = self.audio.open(
-        format=self.FORMAT,
-        channels=self.CHANNELS,
-        rate=self.RATE,
-        input=True,
-        frames_per_buffer=self.CHUNK,
-        stream_callback=self._audio_callback
-      )
-    
-      print("Audio input system started")
-    
-    def pause(self):
-        """Pause audio input processing"""
-        self.is_paused = True
-        self.audio_buffer.clear()  # Clear any buffered audio
         
-    def resume(self):
-        """Resume audio input processing"""
-        self.is_paused = False
+        logger.info("Cloud-compatible audio system initialized")
 
-    def _audio_callback(self, in_data, frame_count, time_info, status):
-        """Callback for audio stream"""
+    def process_audio_file(self, audio_data: np.ndarray, sample_rate: int):
+        """Process audio data from file upload"""
         try:
-            # Don't process audio if paused
-            if self.is_paused:
-                return (in_data, pyaudio.paContinue)
-                
-            # Convert audio data to numpy array
-            audio_data = np.frombuffer(in_data, dtype=np.float32)
+            # Resample if necessary
+            if sample_rate != self.RATE:
+                # Simple resampling - in production use librosa or scipy
+                ratio = self.RATE / sample_rate
+                new_length = int(len(audio_data) * ratio)
+                audio_data = np.interp(
+                    np.linspace(0, len(audio_data), new_length),
+                    np.arange(len(audio_data)),
+                    audio_data
+                )
             
-            # Add to buffer only if not paused
-            if not self.is_paused:
-                self.audio_buffer.extend(audio_data)
+            # Add to buffer
+            self.audio_buffer.extend(audio_data)
             
-            # Convert to format suitable for VAD (16-bit PCM)
-            audio_for_vad = (audio_data * 32767).astype(np.int16).tobytes()
-            
-            # Check for voice activity only if not paused
-            if not self.is_paused and self.vad.is_speech(audio_for_vad, self.RATE):
-                self.voice_segments_queue.put(audio_data)
-            
-            return (in_data, pyaudio.paContinue)
+            return audio_data
             
         except Exception as e:
-            print(f"Error in audio callback: {e}")
-            return (None, pyaudio.paAbort)
-        
-    def _process_audio(self):
-      """Process detected voice segments"""
-      while self.is_running:
-        try:
-            # Get voice segment from queue without timeout
-            audio_segment = self.voice_segments_queue.get()
-            print("🎤 Voice detected - Listening...")
-            
-            # Collect audio segments for a complete utterance
-            segments = [audio_segment]
-            silence_counter = 0
-            
-            # Keep collecting until definitive silence is detected
-            # No timeout, just wait for clear end of speech
-            while silence_counter < 15:  # Increased silence threshold
-                try:
-                    segment = self.voice_segments_queue.get(timeout=0.1)
-                    segments.append(segment)
-                    silence_counter = 0
-                except queue.Empty:
-                    silence_counter += 1
-            
-            # Combine all segments
-            complete_utterance = np.concatenate(segments)
-            self.audio_buffer.extend(complete_utterance)
-            print("✨ Processing your speech...")
-            
-        except Exception as e:
-            print(f"❌ Error processing audio: {e}")
-   
+            logger.error(f"Error processing audio file: {e}")
+            raise
+
     def get_audio_buffer(self):
         """Get the current contents of the audio buffer"""
         return np.array(list(self.audio_buffer))
 
-    def stop(self):
-        """Stop the audio input system"""
-        self.is_running = False
-        
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-        
-        self.audio.terminate()
-        print("Audio input system stopped")
+    def clear_buffer(self):
+        """Clear the audio buffer"""
+        self.audio_buffer.clear()
 
-    def __del__(self):
-        """Cleanup on deletion"""
-        self.stop()
+    # Stub methods for compatibility
+    def start_audio_stream(self):
+        logger.warning("Real-time audio streaming not available in cloud environment")
+        pass
+    
+    def stop(self):
+        logger.info("Audio system stopped")
+        pass
+    
+    def pause(self):
+        self.is_paused = True
+        
+    def resume(self):
+        self.is_paused = False
 
 
 class AudioBufferManager:
-    """Manages the audio buffer and provides utilities for audio manipulation"""
+    """Manages the audio buffer for cloud processing"""
     
     def __init__(self, max_duration_seconds: int = 3, sample_rate: int = 16000):
         self.max_duration = max_duration_seconds
@@ -166,15 +102,26 @@ class AudioBufferManager:
     def clear(self):
         """Clear the buffer"""
         self.buffer.clear()
-
-    def save_buffer_to_wav(self, filename: str):
-        """Save current buffer contents to WAV file"""
-        with wave.open(filename, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)   
-            wf.setframerate(self.sample_rate)
-            audio_data = (np.array(list(self.buffer)) * 32767).astype(np.int16)
-            wf.writeframes(audio_data.tobytes())
-
-
-        
+    
+    def process_wav_data(self, wav_data: bytes, sample_rate: int) -> np.ndarray:
+        """Process WAV data from uploaded file"""
+        try:
+            # Convert bytes to numpy array
+            audio_data = np.frombuffer(wav_data, dtype=np.int16).astype(np.float32) / 32767.0
+            
+            # Resample if needed
+            if sample_rate != self.sample_rate:
+                # Simple resampling
+                ratio = self.sample_rate / sample_rate
+                new_length = int(len(audio_data) * ratio)
+                audio_data = np.interp(
+                    np.linspace(0, len(audio_data), new_length),
+                    np.arange(len(audio_data)),
+                    audio_data
+                )
+            
+            return audio_data
+            
+        except Exception as e:
+            logger.error(f"Error processing WAV data: {e}")
+            raise
